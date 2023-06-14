@@ -119,7 +119,7 @@ public abstract class DatabaseExtension
         }
 
         if (getStore(context).get(uniqueKey) == null) {
-            synchronized (DatabaseExtension.class) {
+            synchronized (uniqueKey) {
                 if (getStore(context).get(uniqueKey) == null) {
                     getStore(context).put(uniqueKey, startDatabase());
                 }
