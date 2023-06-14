@@ -47,7 +47,7 @@ import static org.apache.flink.connector.jdbc.testutils.tables.TableBuilder.tabl
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** The Table Source ITCase for {@link SqlServerDialect}. */
-class SqlServerTableSourceITCase extends AbstractTestBase implements SqlServerTestBase {
+public class SqlServerTableSourceITCase extends AbstractTestBase implements SqlServerTestBase {
 
     private static final TableRow INPUT_TABLE =
             tableRow(
@@ -86,7 +86,7 @@ class SqlServerTableSourceITCase extends AbstractTestBase implements SqlServerTe
     }
 
     @BeforeEach
-    void before() throws SQLException {
+    public void before() throws SQLException {
 
         try (Connection conn = getMetadata().getConnection()) {
             INPUT_TABLE.insertIntoTableValues(
@@ -107,7 +107,7 @@ class SqlServerTableSourceITCase extends AbstractTestBase implements SqlServerTe
     }
 
     @Test
-    void testJdbcSource() throws Exception {
+    public void testJdbcSource() {
         createFlinkTable();
         Iterator<Row> collected = tEnv.executeSql("SELECT * FROM " + INPUT_TABLE_NAME).collect();
         List<String> result =
@@ -131,7 +131,7 @@ class SqlServerTableSourceITCase extends AbstractTestBase implements SqlServerTe
     }
 
     @Test
-    void testProject() throws Exception {
+    public void testProject() throws Exception {
         createFlinkTable();
         Iterator<Row> collected =
                 tEnv.executeSql("SELECT id,datetime_col,decimal_col FROM " + INPUT_TABLE_NAME)
@@ -151,7 +151,7 @@ class SqlServerTableSourceITCase extends AbstractTestBase implements SqlServerTe
     }
 
     @Test
-    void testFilter() throws Exception {
+    public void testFilter() throws Exception {
         createFlinkTable();
         Iterator<Row> collected =
                 tEnv.executeSql(
