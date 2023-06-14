@@ -35,6 +35,7 @@ import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import static org.junit.platform.commons.support.AnnotationSupport.findRepeatableAnnotations;
@@ -118,13 +119,17 @@ public abstract class DatabaseExtension
             return;
         }
 
-        if (getStore(context).get(uniqueKey) == null) {
-            synchronized (DatabaseExtension.class) {
-                if (getStore(context).get(uniqueKey) == null) {
-                    getStore(context).put(uniqueKey, startDatabase());
-                }
-            }
-        }
+        getStore(context)
+                .getOrComputeIfAbsent(
+                        uniqueKey,
+                        (Function<String, Object>)
+                                s -> {
+                                    try {
+                                        return startDatabase();
+                                    } catch (Exception e) {
+                                        throw new RuntimeException(e);
+                                    }
+                                });
 
         getManagedTables(context, TableManaged::createTable);
     }
