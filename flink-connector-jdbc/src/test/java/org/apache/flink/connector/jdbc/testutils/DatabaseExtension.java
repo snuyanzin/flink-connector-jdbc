@@ -119,7 +119,11 @@ public abstract class DatabaseExtension
         }
 
         if (getStore(context).get(uniqueKey) == null) {
-            getStore(context).put(uniqueKey, startDatabase());
+            synchronized (DatabaseExtension.class) {
+                if (getStore(context).get(uniqueKey) == null) {
+                    getStore(context).put(uniqueKey, startDatabase());
+                }
+            }
         }
 
         getManagedTables(context, TableManaged::createTable);
