@@ -119,6 +119,13 @@ public abstract class DatabaseExtension
         }
 
         if (getStore(context).get(uniqueKey) == null) {
+            System.out.println(
+                    "****************** "
+                            + uniqueKey
+                            + " *** "
+                            + Thread.currentThread().getName()
+                            + ": "
+                            + Thread.currentThread().getId());
             getStore(context).put(uniqueKey, startDatabase());
         }
 
