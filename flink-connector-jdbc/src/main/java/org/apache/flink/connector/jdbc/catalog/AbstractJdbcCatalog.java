@@ -71,6 +71,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
 import static org.apache.flink.connector.jdbc.table.JdbcConnectorOptions.PASSWORD;
@@ -93,6 +94,8 @@ public abstract class AbstractJdbcCatalog extends AbstractCatalog {
     protected final String baseUrl;
     protected final String defaultUrl;
 
+    protected final Function<String, String> urlFunction;
+
     public AbstractJdbcCatalog(
             ClassLoader userClassLoader,
             String catalogName,
@@ -107,13 +110,14 @@ public abstract class AbstractJdbcCatalog extends AbstractCatalog {
         checkArgument(!StringUtils.isNullOrWhitespaceOnly(pwd));
         checkArgument(!StringUtils.isNullOrWhitespaceOnly(baseUrl));
 
-        JdbcCatalogUtils.validateJdbcUrl(baseUrl);
+        JdbcCatalogUtils.validateJdbcUrl(baseUrl, defaultDatabase);
 
         this.userClassLoader = userClassLoader;
         this.username = username;
         this.pwd = pwd;
+        this.urlFunction = calculateUrlFunction(baseUrl);
         this.baseUrl = baseUrl.endsWith("/") ? baseUrl : baseUrl + "/";
-        this.defaultUrl = this.baseUrl + defaultDatabase;
+        this.defaultUrl = this.urlFunction.apply(defaultDatabase);
     }
 
     @Override
@@ -537,5 +541,20 @@ public abstract class AbstractJdbcCatalog extends AbstractCatalog {
 
     protected String getSchemaTableName(ObjectPath tablePath) {
         throw new UnsupportedOperationException();
+    }
+
+    private Function<String, String> calculateUrlFunction(String baseUrl) {
+        final String prefix;
+        final int questionMarkIndex = baseUrl.indexOf('?');
+        if (questionMarkIndex == -1) {
+            prefix = baseUrl;
+        } else {
+            String withoutParams = baseUrl.substring(0, questionMarkIndex);
+            prefix = withoutParams.substring(0, withoutParams.lastIndexOf('/') + 1);
+        }
+        if (questionMarkIndex == -1) {
+            return dbName -> prefix + "/" + dbName;
+        }
+        return dbName -> prefix + "/" + dbName + "/" + baseUrl.substring(questionMarkIndex);
     }
 }

@@ -110,7 +110,7 @@ public class PostgresCatalog extends AbstractJdbcCatalog {
         // get all schemas
         List<String> schemas =
                 extractColumnValuesBySQL(
-                        baseUrl + databaseName,
+                        urlFunction.apply(databaseName),
                         "SELECT schema_name FROM information_schema.schemata;",
                         1,
                         pgSchema -> !builtinSchemas.contains(pgSchema));
@@ -120,7 +120,7 @@ public class PostgresCatalog extends AbstractJdbcCatalog {
             // position 1 is database name, position 2 is schema name, position 3 is table name
             List<String> pureTables =
                     extractColumnValuesBySQL(
-                            baseUrl + databaseName,
+                            urlFunction.apply(databaseName),
                             "SELECT * FROM information_schema.tables "
                                     + "WHERE table_type = 'BASE TABLE' "
                                     + "AND table_schema = ? "

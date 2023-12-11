@@ -18,24 +18,29 @@
 
 package org.apache.flink.connector.jdbc.catalog;
 
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 
 /** Test for {@link JdbcCatalogUtils}. */
-public class JdbcCatalogUtilsTest {
-    @Rule public ExpectedException exception = ExpectedException.none();
+class JdbcCatalogUtilsTest {
 
     @Test
-    public void testJdbcUrl() {
-        JdbcCatalogUtils.validateJdbcUrl("jdbc:postgresql://localhost:5432/");
+    void testJdbcUrl() {
+        JdbcCatalogUtils.validateJdbcUrl("jdbc:postgresql://localhost:5432/", null);
 
-        JdbcCatalogUtils.validateJdbcUrl("jdbc:postgresql://localhost:5432");
+        JdbcCatalogUtils.validateJdbcUrl("jdbc:postgresql://localhost:5432", "null");
+        JdbcCatalogUtils.validateJdbcUrl(
+                "jdbc:postgres://demo-postgresql.example.com:18025/defaultdb?sslmode=require",
+                "defaultdb");
     }
 
     @Test
     public void testInvalidJdbcUrl() {
-        exception.expect(IllegalArgumentException.class);
-        JdbcCatalogUtils.validateJdbcUrl("jdbc:postgresql://localhost:5432/db");
+        assertThatThrownBy(
+                        () ->
+                                JdbcCatalogUtils.validateJdbcUrl(
+                                        "jdbc:postgresql://localhost:5432/db", null))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 }
