@@ -23,16 +23,33 @@ import org.apache.flink.annotation.Experimental;
 import org.apache.commons.lang3.ArrayUtils;
 
 import java.io.Serializable;
+import java.util.ArrayList;
 
 /** A data class that model parameterized sql predicate. */
 @Experimental
 public class ParameterizedPredicate {
     private String predicate;
     private Serializable[] parameters;
+    private ArrayList<Integer> indexesOfPredicatePlaceHolders = new ArrayList<>();
+
+    public ArrayList<Integer> getIndexesOfPredicatePlaceHolders() {
+        return indexesOfPredicatePlaceHolders;
+    }
+
+    public void setIndexesOfPredicatePlaceHolders(
+            ArrayList<Integer> indexesOfPredicatePlaceHolders) {
+        this.indexesOfPredicatePlaceHolders = indexesOfPredicatePlaceHolders;
+    }
 
     public ParameterizedPredicate(String predicate) {
         this.predicate = predicate;
         this.parameters = new Serializable[0];
+    }
+
+    public ParameterizedPredicate(ParameterizedPredicate that) {
+        this.predicate = that.getPredicate();
+        this.parameters = that.getParameters();
+        this.indexesOfPredicatePlaceHolders = that.getIndexesOfPredicatePlaceHolders();
     }
 
     public Serializable[] getParameters() {
@@ -52,8 +69,26 @@ public class ParameterizedPredicate {
     }
 
     public ParameterizedPredicate combine(String operator, ParameterizedPredicate that) {
+        int paramIndex = String.format("(%s %s ", this.predicate, operator).length();
+        if (!that.indexesOfPredicatePlaceHolders.isEmpty()) {
+            paramIndex = paramIndex + that.indexesOfPredicatePlaceHolders.get(0);
+        }
+
         this.predicate = String.format("(%s %s %s)", this.predicate, operator, that.predicate);
         this.parameters = ArrayUtils.addAll(this.parameters, that.parameters);
+
+        for (int i = 0; i < this.indexesOfPredicatePlaceHolders.size(); i++) {
+            // increment all the existing indexes to account for the new additional first begin
+            // bracket
+            this.indexesOfPredicatePlaceHolders.set(
+                    i, this.indexesOfPredicatePlaceHolders.get(i) + 1);
+        }
+        if (that.predicate.equals(
+                        JdbcFilterPushdownPreparedStatementVisitor.PUSHDOWN_PREDICATE_PLACEHOLDER)
+                || (!that.indexesOfPredicatePlaceHolders.isEmpty())) {
+            // add index if that is a placeholder or has a placeholder.
+            this.indexesOfPredicatePlaceHolders.add(paramIndex);
+        }
         return this;
     }
 }

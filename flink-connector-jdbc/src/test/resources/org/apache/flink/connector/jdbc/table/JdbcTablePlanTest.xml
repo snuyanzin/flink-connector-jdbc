@@ -68,4 +68,76 @@ TableSourceScan(table=[[default_catalog, default_database, jdbc, filter=[and(OR(
 ]]>
 	</Resource>
   </TestCase>
+  <TestCase name="testLookupJoin">
+        <Resource name="sql">
+            <![CDATA[SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on a.ip = d.ip]]>
+        </Resource>
+        <Resource name="ast">
+            <![CDATA[
+LogicalProject(ip=[$0], proctime=[$1], ip0=[$2], type=[$3], age=[$4])
++- LogicalCorrelate(correlation=[$cor0], joinType=[left], requiredColumns=[{0, 1}])
+   :- LogicalProject(ip=[$0], proctime=[PROCTIME()])
+   :  +- LogicalTableScan(table=[[default_catalog, default_database, a]])
+   +- LogicalFilter(condition=[=($cor0.ip, CAST($0):VARCHAR(2147483647) CHARACTER SET "UTF-16LE")])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalTableScan(table=[[default_catalog, default_database, d]])
+]]>
+        </Resource>
+        <Resource name="optimized exec plan">
+            <![CDATA[
+Calc(select=[ip, PROCTIME_MATERIALIZE(proctime) AS proctime, ip0, type, age])
++- LookupJoin(table=[default_catalog.default_database.d], joinType=[LeftOuterJoin], lookup=[ip=ip], select=[ip, proctime, ip, type, age, CAST(ip AS VARCHAR(2147483647)) AS ip0])
+   +- Calc(select=[ip, PROCTIME() AS proctime])
+      +- TableSourceScan(table=[[default_catalog, default_database, a]], fields=[ip])
+]]>
+        </Resource>
+    </TestCase>
+  <TestCase name="testLookupJoinWithFilter">
+        <Resource name="sql">
+            <![CDATA[SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on d.type = 0 and a.ip = d.ip]]>
+        </Resource>
+        <Resource name="ast">
+            <![CDATA[
+LogicalProject(ip=[$0], proctime=[$1], ip0=[$2], type=[$3], age=[$4])
++- LogicalCorrelate(correlation=[$cor0], joinType=[left], requiredColumns=[{0, 1}])
+   :- LogicalProject(ip=[$0], proctime=[PROCTIME()])
+   :  +- LogicalTableScan(table=[[default_catalog, default_database, a]])
+   +- LogicalFilter(condition=[AND(=($1, 0), =($cor0.ip, CAST($0):VARCHAR(2147483647) CHARACTER SET "UTF-16LE"))])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalTableScan(table=[[default_catalog, default_database, d]])
+]]>
+        </Resource>
+        <Resource name="optimized exec plan">
+            <![CDATA[
+Calc(select=[ip, PROCTIME_MATERIALIZE(proctime) AS proctime, ip0, type, age])
++- LookupJoin(table=[default_catalog.default_database.d], joinType=[LeftOuterJoin], lookup=[ip=ip], select=[ip, proctime, ip, CAST(0 AS INTEGER) AS type, age, CAST(ip AS VARCHAR(2147483647)) AS ip0])
+   +- Calc(select=[ip, PROCTIME() AS proctime])
+      +- TableSourceScan(table=[[default_catalog, default_database, a]], fields=[ip])
+]]>
+        </Resource>
+    </TestCase>
+    <TestCase name="testLookupJoinWithORFilter">
+        <Resource name="sql">
+            <![CDATA[SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on (d.age = 50 OR d.type = 1)  and a.ip = d.ip]]>
+        </Resource>
+        <Resource name="ast">
+            <![CDATA[
+LogicalProject(ip=[$0], proctime=[$1], ip0=[$2], type=[$3], age=[$4])
++- LogicalCorrelate(correlation=[$cor0], joinType=[left], requiredColumns=[{0, 1}])
+   :- LogicalProject(ip=[$0], proctime=[PROCTIME()])
+   :  +- LogicalTableScan(table=[[default_catalog, default_database, a]])
+   +- LogicalFilter(condition=[AND(OR(=($2, 50), =($1, 1)), =($cor0.ip, CAST($0):VARCHAR(2147483647) CHARACTER SET "UTF-16LE"))])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalTableScan(table=[[default_catalog, default_database, d]])
+]]>
+        </Resource>
+        <Resource name="optimized exec plan">
+            <![CDATA[
+Calc(select=[ip, PROCTIME_MATERIALIZE(proctime) AS proctime, ip0, type, age])
++- LookupJoin(table=[default_catalog.default_database.d], joinType=[LeftOuterJoin], lookup=[ip=ip], select=[ip, proctime, ip, type, age, CAST(ip AS VARCHAR(2147483647)) AS ip0])
+   +- Calc(select=[ip, PROCTIME() AS proctime])
+      +- TableSourceScan(table=[[default_catalog, default_database, a]], fields=[ip])
+]]>
+        </Resource>
+    </TestCase>
 </Root>

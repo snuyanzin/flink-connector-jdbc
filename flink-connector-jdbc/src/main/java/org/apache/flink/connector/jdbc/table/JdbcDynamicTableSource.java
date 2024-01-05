@@ -19,6 +19,7 @@
 package org.apache.flink.connector.jdbc.table;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.connector.jdbc.dialect.JdbcDialect;
 import org.apache.flink.connector.jdbc.internal.options.InternalJdbcConnectionOptions;
 import org.apache.flink.connector.jdbc.internal.options.JdbcReadOptions;
@@ -78,6 +79,8 @@ public class JdbcDynamicTableSource
     private List<String> resolvedPredicates = new ArrayList<>();
     private Serializable[] pushdownParams = new Serializable[0];
 
+    private List<ParameterizedPredicate> pushdownParameterizedPredicates = new ArrayList<>();
+
     public JdbcDynamicTableSource(
             InternalJdbcConnectionOptions options,
             JdbcReadOptions readOptions,
@@ -94,15 +97,18 @@ public class JdbcDynamicTableSource
 
     @Override
     public LookupRuntimeProvider getLookupRuntimeProvider(LookupContext context) {
-        // JDBC only support non-nested look up keys
+        // JDBC only supports non-nested look up keys
         String[] keyNames = new String[context.getKeys().length];
+
         for (int i = 0; i < keyNames.length; i++) {
             int[] innerKeyArr = context.getKeys()[i];
             Preconditions.checkArgument(
                     innerKeyArr.length == 1, "JDBC only support non-nested look up keys");
             keyNames[i] = DataType.getFieldNames(physicalRowDataType).get(innerKeyArr[0]);
         }
+
         final RowType rowType = (RowType) physicalRowDataType.getLogicalType();
+
         JdbcRowDataLookupFunction lookupFunction =
                 new JdbcRowDataLookupFunction(
                         options,
@@ -110,12 +116,55 @@ public class JdbcDynamicTableSource
                         DataType.getFieldNames(physicalRowDataType).toArray(new String[0]),
                         DataType.getFieldDataTypes(physicalRowDataType).toArray(new DataType[0]),
                         keyNames,
-                        rowType);
+                        rowType,
+                        getResolvedConditions(this.pushdownParameterizedPredicates));
         if (cache != null) {
             return PartialCachingLookupProvider.of(lookupFunction, cache);
         } else {
             return LookupFunctionProvider.of(lookupFunction);
         }
+    }
+
+    @VisibleForTesting
+    protected String[] getResolvedConditions(List<ParameterizedPredicate> parameterizedPredicates) {
+        String[] conditions = null;
+        if (parameterizedPredicates != null) {
+            conditions = new String[parameterizedPredicates.size()];
+
+            for (int predicateIndex = 0;
+                    predicateIndex < parameterizedPredicates.size();
+                    predicateIndex++) {
+                ParameterizedPredicate pushdownParameterizedPredicate =
+                        parameterizedPredicates.get(predicateIndex);
+                String predicate = pushdownParameterizedPredicate.getPredicate();
+                Serializable[] parameters = pushdownParameterizedPredicate.getParameters();
+                ArrayList<Integer> indexesOfPredicatePlaceHolders =
+                        pushdownParameterizedPredicate.getIndexesOfPredicatePlaceHolders();
+                // build up the resolved condition.
+                StringBuilder resolvedCondition = new StringBuilder();
+                if (parameters == null || parameters.length == 0) {
+                    // no parameter values to resolve (for example when there is a unary
+                    // operation)
+                    resolvedCondition.append(predicate);
+                } else {
+                    int processingIndex = 0;
+                    for (int parameterIndex = 0;
+                            parameterIndex < parameters.length;
+                            parameterIndex++) {
+                        resolvedCondition.append(
+                                predicate.substring(
+                                        processingIndex,
+                                        indexesOfPredicatePlaceHolders.get(parameterIndex)));
+                        resolvedCondition.append(parameters[parameterIndex]);
+                        processingIndex = indexesOfPredicatePlaceHolders.get(parameterIndex) + 1;
+                    }
+                    resolvedCondition.append(
+                            predicate.substring(processingIndex, predicate.length()));
+                }
+                conditions[predicateIndex] = resolvedCondition.toString();
+            }
+        }
+        return conditions;
     }
 
     @Override
@@ -174,8 +223,9 @@ public class JdbcDynamicTableSource
         if (limit >= 0) {
             query = String.format("%s %s", query, dialect.getLimitClause(limit));
         }
-
-        LOG.debug("Query generated for JDBC scan: " + query);
+        if (LOG.isDebugEnabled()) {
+            LOG.debug("Query generated for JDBC scan: " + query);
+        }
 
         builder.setQuery(query);
         final RowType rowType = (RowType) physicalRowDataType.getLogicalType();
@@ -266,6 +316,7 @@ public class JdbcDynamicTableSource
             if (simplePredicate.isPresent()) {
                 acceptedFilters.add(filter);
                 ParameterizedPredicate pred = simplePredicate.get();
+                this.pushdownParameterizedPredicates.add(pred);
                 this.pushdownParams = ArrayUtils.addAll(this.pushdownParams, pred.getParameters());
                 this.resolvedPredicates.add(pred.getPredicate());
             } else {

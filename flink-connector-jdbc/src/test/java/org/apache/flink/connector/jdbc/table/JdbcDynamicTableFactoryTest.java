@@ -390,7 +390,7 @@ class JdbcDynamicTableFactoryTest {
         assertThat(actual).isEqualTo(expected);
     }
 
-    private Map<String, String> getAllOptions() {
+    protected static Map<String, String> getAllOptions() {
         Map<String, String> options = new HashMap<>();
         options.put("connector", "jdbc");
         options.put("url", "jdbc:derby:memory:mydb");

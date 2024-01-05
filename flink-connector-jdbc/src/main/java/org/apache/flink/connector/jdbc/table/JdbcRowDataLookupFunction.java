@@ -45,6 +45,7 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
@@ -72,6 +73,17 @@ public class JdbcRowDataLookupFunction extends LookupFunction {
             DataType[] fieldTypes,
             String[] keyNames,
             RowType rowType) {
+        this(options, maxRetryTimes, fieldNames, fieldTypes, keyNames, rowType, null);
+    }
+
+    public JdbcRowDataLookupFunction(
+            InternalJdbcConnectionOptions options,
+            int maxRetryTimes,
+            String[] fieldNames,
+            DataType[] fieldTypes,
+            String[] keyNames,
+            RowType rowType,
+            String[] conditions) {
         checkNotNull(options, "No JdbcOptions supplied.");
         checkNotNull(fieldNames, "No fieldNames supplied.");
         checkNotNull(fieldTypes, "No fieldTypes supplied.");
@@ -92,9 +104,25 @@ public class JdbcRowDataLookupFunction extends LookupFunction {
                                 })
                         .toArray(DataType[]::new);
         this.maxRetryTimes = maxRetryTimes;
-        this.query =
+
+        final String baseSelectStatement =
                 options.getDialect()
                         .getSelectFromStatement(options.getTableName(), fieldNames, keyNames);
+        if (conditions == null || conditions.length == 0) {
+            this.query = baseSelectStatement;
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Issuing look up select {}", this.query);
+            }
+        } else {
+            this.query =
+                    baseSelectStatement
+                            + " AND "
+                            + Arrays.stream(conditions).collect(Collectors.joining(" AND "));
+            if (LOG.isDebugEnabled()) {
+                LOG.debug("Issuing look up select with conditions {}", this.query);
+            }
+        }
+
         JdbcDialect jdbcDialect = options.getDialect();
         this.jdbcRowConverter = jdbcDialect.getRowConverter(rowType);
         this.lookupKeyRowConverter =

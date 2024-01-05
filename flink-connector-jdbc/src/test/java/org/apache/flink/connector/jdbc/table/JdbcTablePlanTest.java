@@ -52,6 +52,24 @@ public class JdbcTablePlanTest extends TableTestBase {
                                 + "  'url'='jdbc:derby:memory:test',"
                                 + "  'table-name'='test_table'"
                                 + ")");
+        util.tableEnv()
+                .executeSql(
+                        "CREATE TABLE  d ( "
+                                + "ip varchar(20), type int, age int"
+                                + ") WITH ("
+                                + "  'connector'='jdbc',"
+                                + "  'url'='jdbc:derby:memory:test1',"
+                                + "  'table-name'='d'"
+                                + ")");
+        util.tableEnv()
+                .executeSql(
+                        "CREATE TABLE a ( "
+                                + " ip string, proctime as proctime() "
+                                + ") WITH ("
+                                + "  'connector'='jdbc',"
+                                + "  'url'='jdbc:derby:memory:test2',"
+                                + "  'table-name'='a'"
+                                + ")");
     }
 
     @Test
@@ -68,6 +86,28 @@ public class JdbcTablePlanTest extends TableTestBase {
     public void testFilterPushdown() {
         util.verifyExecPlan(
                 "SELECT id, time_col, real_col FROM jdbc WHERE id = 900001 AND time_col <> TIME '11:11:11' OR double_col >= -1000.23");
+    }
+
+    /**
+     * Note the join condition is not present in the optimized plan, as it is handled in the JDBC
+     * java code, where it adds the join conditions to the select statement string.
+     */
+    @Test
+    public void testLookupJoin() {
+        util.verifyExecPlan(
+                "SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on a.ip = d.ip");
+    }
+
+    @Test
+    public void testLookupJoinWithFilter() {
+        util.verifyExecPlan(
+                "SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on d.type = 0 and a.ip = d.ip");
+    }
+
+    @Test
+    public void testLookupJoinWithORFilter() {
+        util.verifyExecPlan(
+                "SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on (d.age = 50 OR d.type = 1)  and a.ip = d.ip");
     }
 
     /**
