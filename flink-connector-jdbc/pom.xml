@@ -36,7 +36,6 @@ under the License.
 
 	<properties>
 		<scala.binary.version>2.12</scala.binary.version>
-		<scala-library.version>2.12.7</scala-library.version>
 		<assertj.version>3.23.1</assertj.version>
 		<postgres.version>42.5.1</postgres.version>
 		<oracle.version>21.8.0.0</oracle.version>
@@ -250,17 +249,6 @@ under the License.
 		</dependency>
 
 	</dependencies>
-
-	<dependencyManagement>
-		<dependencies>
-			<!-- For dependency convergence -->
-			<dependency>
-				<groupId>org.scala-lang</groupId>
-				<artifactId>scala-library</artifactId>
-				<version>${scala-library.version}</version>
-			</dependency>
-		</dependencies>
-	</dependencyManagement>
 
 	<build>
 		<plugins>
