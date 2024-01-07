@@ -48,7 +48,7 @@ under the License.
 
     <properties>
         <flink.version>1.16.2</flink.version>
-
+        <scala-library.version>2.12.7</scala-library.version>
         <jackson-bom.version>2.13.4.20221013</jackson-bom.version>
         <junit4.version>4.13.2</junit4.version>
         <junit5.version>5.10.1</junit5.version>
@@ -426,7 +426,7 @@ under the License.
 
             <properties>
                 <!-- Bump Scala because 2.12.7 doesn't compile on Java 17. -->
-                <scala.version>2.12.15</scala.version>
+                <scala-library.version>2.12.15</scala-library.version>
             </properties>
         </profile>
         <profile>
@@ -437,7 +437,7 @@ under the License.
 
             <properties>
                 <!-- Bump Scala because 2.12.7 doesn't compile on Java 21. -->
-                <scala.version>2.12.18</scala.version>
+                <scala-library.version>2.12.18</scala-library.version>
             </properties>
         </profile>
     </profiles>
