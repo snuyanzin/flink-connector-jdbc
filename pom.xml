@@ -416,4 +416,29 @@ under the License.
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>java17</id>
+            <activation>
+                <jdk>[17,)</jdk>
+            </activation>
+
+            <properties>
+                <!-- Bump Scala because 2.12.7 doesn't compile on Java 17. -->
+                <scala.version>2.12.15</scala.version>
+            </properties>
+        </profile>
+        <profile>
+            <id>java21</id>
+            <activation>
+                <jdk>[21,)</jdk>
+            </activation>
+
+            <properties>
+                <!-- Bump Scala because 2.12.7 doesn't compile on Java 21. -->
+                <scala.version>2.12.18</scala.version>
+            </properties>
+        </profile>
+    </profiles>
 </project>
