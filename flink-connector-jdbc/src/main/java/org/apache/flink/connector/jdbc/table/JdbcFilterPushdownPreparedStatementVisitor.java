@@ -26,7 +26,9 @@ import org.apache.flink.table.expressions.ExpressionDefaultVisitor;
 import org.apache.flink.table.expressions.FieldReferenceExpression;
 import org.apache.flink.table.expressions.ResolvedExpression;
 import org.apache.flink.table.expressions.ValueLiteralExpression;
+import org.apache.flink.table.functions.BuiltInFunctionDefinition;
 import org.apache.flink.table.functions.BuiltInFunctionDefinitions;
+import org.apache.flink.table.functions.FunctionDefinition;
 import org.apache.flink.table.types.logical.LogicalType;
 
 import java.io.Serializable;
@@ -36,11 +38,12 @@ import java.sql.Timestamp;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Visitor that convert Expression to ParameterizedPredicate. Return Optional.empty() if we cannot
@@ -50,52 +53,9 @@ import java.util.function.Function;
 public class JdbcFilterPushdownPreparedStatementVisitor
         extends ExpressionDefaultVisitor<Optional<ParameterizedPredicate>> {
 
-    protected static final String PUSHDOWN_PREDICATE_PLACEHOLDER = "?";
-
-    protected static final String OPERATOR_EQUALS = "=";
-
-    protected static final String OPERATOR_LESS_THAN = "<";
-
-    protected static final String OPERATOR_LESS_THAN_OR_EQUAL = "<=";
-
-    protected static final String OPERATOR_GREATER_THAN = ">";
-
-    protected static final String OPERATOR_GREATER_THAN_OR_EQUAL = ">=";
-
-    protected static final String OPERATOR_NOT_EQUALS = "<>";
-
-    protected static final String OPERATOR_OR = "OR";
-
-    protected static final String OPERATOR_AND = "AND";
-
-    protected static final String OPERATOR_LIKE = "LIKE";
-
-    protected static final String OPERATOR_IS_NULL = "IS NULL";
-
-    protected static final String OPERATOR_IS_NOT_NULL = "IS NOT NULL";
-
-    private static String[] simpleBinaryOperatorValues =
-            new String[] {
-                OPERATOR_EQUALS,
-                OPERATOR_LESS_THAN,
-                OPERATOR_LESS_THAN_OR_EQUAL,
-                OPERATOR_GREATER_THAN,
-                OPERATOR_GREATER_THAN_OR_EQUAL,
-                OPERATOR_NOT_EQUALS,
-                OPERATOR_LIKE
-            };
-    private static String[] unaryOperatorValues =
-            new String[] {OPERATOR_IS_NULL, OPERATOR_IS_NOT_NULL};
+    protected static final String PLACEHOLDER = "?";
 
     private final Function<String, String> quoteIdentifierFunction;
-
-    @VisibleForTesting
-    protected static final Set<String> SIMPLE_BINARY_OPERATORS =
-            new HashSet<>(Arrays.asList(simpleBinaryOperatorValues));
-
-    @VisibleForTesting
-    protected static final Set<String> UNARY_OPERATORS =
-            new HashSet<>(Arrays.asList(unaryOperatorValues));
 
     public JdbcFilterPushdownPreparedStatementVisitor(
             Function<String, String> quoteIdentifierFunction) {
@@ -104,42 +64,12 @@ public class JdbcFilterPushdownPreparedStatementVisitor
 
     @Override
     public Optional<ParameterizedPredicate> visit(CallExpression call) {
-        if (BuiltInFunctionDefinitions.EQUALS.equals(call.getFunctionDefinition())) {
-            return renderBinaryOperator(OPERATOR_EQUALS, call.getResolvedChildren());
+        FilterPushdownFunction filterPushdownFunction =
+                FilterPushdownFunction.valueOf(call.getFunctionDefinition());
+        if (filterPushdownFunction == null) {
+            return Optional.empty();
         }
-        if (BuiltInFunctionDefinitions.LESS_THAN.equals(call.getFunctionDefinition())) {
-            return renderBinaryOperator(OPERATOR_LESS_THAN, call.getResolvedChildren());
-        }
-        if (BuiltInFunctionDefinitions.LESS_THAN_OR_EQUAL.equals(call.getFunctionDefinition())) {
-            return renderBinaryOperator(OPERATOR_LESS_THAN_OR_EQUAL, call.getResolvedChildren());
-        }
-        if (BuiltInFunctionDefinitions.GREATER_THAN.equals(call.getFunctionDefinition())) {
-            return renderBinaryOperator(OPERATOR_GREATER_THAN, call.getResolvedChildren());
-        }
-        if (BuiltInFunctionDefinitions.GREATER_THAN_OR_EQUAL.equals(call.getFunctionDefinition())) {
-            return renderBinaryOperator(OPERATOR_GREATER_THAN_OR_EQUAL, call.getResolvedChildren());
-        }
-        if (BuiltInFunctionDefinitions.NOT_EQUALS.equals(call.getFunctionDefinition())) {
-            return renderBinaryOperator(OPERATOR_NOT_EQUALS, call.getResolvedChildren());
-        }
-        if (BuiltInFunctionDefinitions.OR.equals(call.getFunctionDefinition())) {
-            return renderBinaryOperator(OPERATOR_OR, call.getResolvedChildren());
-        }
-        if (BuiltInFunctionDefinitions.AND.equals(call.getFunctionDefinition())) {
-            return renderBinaryOperator(OPERATOR_AND, call.getResolvedChildren());
-        }
-        if (BuiltInFunctionDefinitions.LIKE.equals(call.getFunctionDefinition())) {
-            return renderBinaryOperator(OPERATOR_LIKE, call.getResolvedChildren());
-        }
-        if (BuiltInFunctionDefinitions.IS_NULL.equals(call.getFunctionDefinition())) {
-            return renderUnaryOperator(OPERATOR_IS_NULL, call.getResolvedChildren().get(0), true);
-        }
-        if (BuiltInFunctionDefinitions.IS_NOT_NULL.equals(call.getFunctionDefinition())) {
-            return renderUnaryOperator(
-                    OPERATOR_IS_NOT_NULL, call.getResolvedChildren().get(0), true);
-        }
-
-        return Optional.empty();
+        return filterPushdownFunction.apply(this, call.getResolvedChildren());
     }
 
     private Optional<ParameterizedPredicate> renderBinaryOperator(
@@ -147,10 +77,8 @@ public class JdbcFilterPushdownPreparedStatementVisitor
         Optional<ParameterizedPredicate> leftOperandString = allOperands.get(0).accept(this);
 
         Optional<ParameterizedPredicate> rightOperandString = allOperands.get(1).accept(this);
-        Optional<ParameterizedPredicate> renderedParameterizedPredicate =
-                leftOperandString.flatMap(
-                        left -> rightOperandString.map(right -> left.combine(operator, right)));
-        return renderedParameterizedPredicate;
+        return leftOperandString.flatMap(
+                left -> rightOperandString.map(right -> left.combine(operator, right)));
     }
 
     @VisibleForTesting
@@ -182,66 +110,58 @@ public class JdbcFilterPushdownPreparedStatementVisitor
         LogicalType tpe = litExp.getOutputDataType().getLogicalType();
         Serializable[] params = new Serializable[1];
 
-        ParameterizedPredicate predicate =
-                new ParameterizedPredicate(PUSHDOWN_PREDICATE_PLACEHOLDER);
-
+        ParameterizedPredicate predicate = new ParameterizedPredicate(PLACEHOLDER);
+        Function<ValueLiteralExpression, Serializable> f;
         switch (tpe.getTypeRoot()) {
             case CHAR:
-                params[0] = litExp.getValueAs(String.class).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(String.class).orElse(null);
+                break;
             case VARCHAR:
-                params[0] = litExp.getValueAs(String.class).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(String.class).orElse(null);
+                break;
             case BOOLEAN:
-                params[0] = litExp.getValueAs(Boolean.class).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(Boolean.class).orElse(null);
+                break;
             case DECIMAL:
-                params[0] = litExp.getValueAs(BigDecimal.class).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(BigDecimal.class).orElse(null);
+                break;
             case TINYINT:
-                params[0] = litExp.getValueAs(Byte.class).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(Byte.class).orElse(null);
+                break;
             case SMALLINT:
-                params[0] = litExp.getValueAs(Short.class).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(Short.class).orElse(null);
+                break;
             case INTEGER:
-                params[0] = litExp.getValueAs(Integer.class).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(Integer.class).orElse(null);
+                break;
             case BIGINT:
-                params[0] = litExp.getValueAs(Long.class).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(Long.class).orElse(null);
+                break;
             case FLOAT:
-                params[0] = litExp.getValueAs(Float.class).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(Float.class).orElse(null);
+                break;
             case DOUBLE:
-                params[0] = litExp.getValueAs(Double.class).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(Double.class).orElse(null);
+                break;
             case DATE:
-                params[0] = litExp.getValueAs(LocalDate.class).map(Date::valueOf).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(LocalDate.class).map(Date::valueOf).orElse(null);
+                break;
             case TIME_WITHOUT_TIME_ZONE:
-                params[0] = litExp.getValueAs(java.sql.Time.class).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f = f1 -> litExp.getValueAs(java.sql.Time.class).orElse(null);
+                break;
             case TIMESTAMP_WITHOUT_TIME_ZONE:
-                params[0] =
-                        litExp.getValueAs(LocalDateTime.class).map(Timestamp::valueOf).orElse(null);
-                predicate.setParameters(params);
-                return Optional.of(predicate);
+                f =
+                        f1 ->
+                                litExp.getValueAs(LocalDateTime.class)
+                                        .map(Timestamp::valueOf)
+                                        .orElse(null);
+                break;
             default:
                 return Optional.empty();
         }
+        params[0] = f.apply(litExp);
+        predicate.setParameters(params);
+        return Optional.of(predicate);
     }
 
     @Override
@@ -254,5 +174,92 @@ public class JdbcFilterPushdownPreparedStatementVisitor
     @Override
     protected Optional<ParameterizedPredicate> defaultMethod(Expression expression) {
         return Optional.empty();
+    }
+
+    /**
+     * Enum to map {@code BuiltInFunctionDefinitions} to required info for further push down
+     * processing with {@code JdbcFilterPushdownPreparedStatementVisitor}.
+     */
+    enum FilterPushdownFunction {
+        EQUALS(BuiltInFunctionDefinitions.EQUALS, "="),
+        LESS_THAN(BuiltInFunctionDefinitions.LESS_THAN, "<"),
+        GREATER_THAN(BuiltInFunctionDefinitions.GREATER_THAN, ">"),
+        LESS_THAN_OR_EQUAL(BuiltInFunctionDefinitions.LESS_THAN_OR_EQUAL, "<="),
+        GREATER_THAN_OR_EQUAL(BuiltInFunctionDefinitions.GREATER_THAN_OR_EQUAL, ">="),
+        NOT_EQUALS(BuiltInFunctionDefinitions.NOT_EQUALS, "<>"),
+        OR(BuiltInFunctionDefinitions.OR, "OR"),
+        AND(BuiltInFunctionDefinitions.AND, "AND"),
+        LIKE(BuiltInFunctionDefinitions.LIKE, "LIKE"),
+        IS_NULL(BuiltInFunctionDefinitions.IS_NULL, "IS NULL", true, true),
+        IS_NOT_NULL(BuiltInFunctionDefinitions.IS_NOT_NULL, "IS NOT NULL", true, true);
+
+        private final BuiltInFunctionDefinition function;
+        private final String functionSql;
+        private final boolean unaryOperation;
+        private final boolean operatorOnTheLeft;
+
+        private static final Map<FunctionDefinition, FilterPushdownFunction>
+                BUILT_IN_FUNCTION_2_FILTER_FUNCTION_MAP =
+                        Arrays.stream(values())
+                                .collect(Collectors.toMap(t -> t.function, Function.identity()));
+
+        FilterPushdownFunction(
+                BuiltInFunctionDefinition function,
+                String functionSql,
+                boolean unaryOperation,
+                boolean operatorOnTheLeft) {
+            this.function = function;
+            this.functionSql = functionSql;
+            this.unaryOperation = unaryOperation;
+            this.operatorOnTheLeft = operatorOnTheLeft;
+        }
+
+        FilterPushdownFunction(BuiltInFunctionDefinition function, String functionSql) {
+            this(function, functionSql, false, false);
+        }
+
+        Optional<ParameterizedPredicate> apply(
+                JdbcFilterPushdownPreparedStatementVisitor visitor, List<ResolvedExpression> args) {
+            if (unaryOperation) {
+                return visitor.renderUnaryOperator(functionSql, args.get(0), operatorOnTheLeft);
+            } else {
+                return visitor.renderBinaryOperator(functionSql, args);
+            }
+        }
+
+        static FilterPushdownFunction valueOf(FunctionDefinition builtInFunctionDefinition) {
+            return BUILT_IN_FUNCTION_2_FILTER_FUNCTION_MAP.get(builtInFunctionDefinition);
+        }
+
+        @VisibleForTesting
+        static Set<String> getBinaryOperators() {
+            return Arrays.stream(values())
+                    .filter(t -> !t.unaryOperation)
+                    .map(t -> t.functionSql)
+                    .collect(Collectors.toSet());
+        }
+
+        @VisibleForTesting
+        static Set<String> getUnaryOperators() {
+            return Arrays.stream(values())
+                    .filter(t -> t.unaryOperation)
+                    .map(t -> t.functionSql)
+                    .collect(Collectors.toSet());
+        }
+
+        @VisibleForTesting
+        String getFunctionSql() {
+            return functionSql;
+        }
+
+        @VisibleForTesting
+        boolean isUnaryOperation() {
+            return unaryOperation;
+        }
+
+        @VisibleForTesting
+        boolean isOperatorOnTheLeft() {
+            return operatorOnTheLeft;
+        }
     }
 }

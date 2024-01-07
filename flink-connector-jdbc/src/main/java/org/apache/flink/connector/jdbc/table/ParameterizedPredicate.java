@@ -23,21 +23,22 @@ import org.apache.flink.annotation.Experimental;
 import org.apache.commons.lang3.ArrayUtils;
 
 import java.io.Serializable;
-import java.util.ArrayList;
+
+import static org.apache.flink.connector.jdbc.table.JdbcFilterPushdownPreparedStatementVisitor.PLACEHOLDER;
 
 /** A data class that model parameterized sql predicate. */
 @Experimental
 public class ParameterizedPredicate {
     private String predicate;
     private Serializable[] parameters;
-    private ArrayList<Integer> indexesOfPredicatePlaceHolders = new ArrayList<>();
+    private int[] indexesOfPredicatePlaceHolders;
+    private int indexArrayLength;
 
-    public ArrayList<Integer> getIndexesOfPredicatePlaceHolders() {
+    public int[] getIndexesOfPredicatePlaceHolders() {
         return indexesOfPredicatePlaceHolders;
     }
 
-    public void setIndexesOfPredicatePlaceHolders(
-            ArrayList<Integer> indexesOfPredicatePlaceHolders) {
+    public void setIndexesOfPredicatePlaceHolders(int[] indexesOfPredicatePlaceHolders) {
         this.indexesOfPredicatePlaceHolders = indexesOfPredicatePlaceHolders;
     }
 
@@ -69,26 +70,57 @@ public class ParameterizedPredicate {
     }
 
     public ParameterizedPredicate combine(String operator, ParameterizedPredicate that) {
-        int paramIndex = String.format("(%s %s ", this.predicate, operator).length();
-        if (!that.indexesOfPredicatePlaceHolders.isEmpty()) {
-            paramIndex = paramIndex + that.indexesOfPredicatePlaceHolders.get(0);
+        int indexLength =
+                (indexesOfPredicatePlaceHolders == null
+                        ? 0
+                        : indexesOfPredicatePlaceHolders.length);
+        for (int i = 0; i < indexLength; i++) {
+            this.indexesOfPredicatePlaceHolders[i] = this.indexesOfPredicatePlaceHolders[i] + 1;
+        }
+        StringBuilder strPredicate =
+                new StringBuilder("(")
+                        .append(this.predicate)
+                        .append(" ")
+                        .append(operator)
+                        .append(" ");
+        final int sbLength = strPredicate.length();
+        if (PLACEHOLDER.equals(this.predicate)) {
+            this.indexesOfPredicatePlaceHolders =
+                    ArrayUtils.add(this.indexesOfPredicatePlaceHolders, 1);
+        } else if (PLACEHOLDER.equals(that.predicate)) {
+            this.indexesOfPredicatePlaceHolders =
+                    ArrayUtils.add(this.indexesOfPredicatePlaceHolders, sbLength);
         }
 
-        this.predicate = String.format("(%s %s %s)", this.predicate, operator, that.predicate);
+        if (that.indexesOfPredicatePlaceHolders != null
+                && that.indexesOfPredicatePlaceHolders.length > 0) {
+            int[] newArrayOfIndexes;
+            int offset = 0;
+            if (this.indexesOfPredicatePlaceHolders == null
+                    || this.indexesOfPredicatePlaceHolders.length == 0) {
+                newArrayOfIndexes = that.indexesOfPredicatePlaceHolders;
+            } else {
+                newArrayOfIndexes =
+                        new int
+                                [this.indexesOfPredicatePlaceHolders.length
+                                        + that.indexesOfPredicatePlaceHolders.length];
+                System.arraycopy(
+                        this.indexesOfPredicatePlaceHolders,
+                        0,
+                        newArrayOfIndexes,
+                        0,
+                        this.indexesOfPredicatePlaceHolders.length);
+                offset = this.indexesOfPredicatePlaceHolders.length;
+            }
+            for (int i = 0; i < that.indexesOfPredicatePlaceHolders.length; i++) {
+                newArrayOfIndexes[i + offset] = that.indexesOfPredicatePlaceHolders[i] + sbLength;
+            }
+            this.indexesOfPredicatePlaceHolders = newArrayOfIndexes;
+        }
+
+        this.predicate = strPredicate.append(that.predicate).append(")").toString();
         this.parameters = ArrayUtils.addAll(this.parameters, that.parameters);
 
-        for (int i = 0; i < this.indexesOfPredicatePlaceHolders.size(); i++) {
-            // increment all the existing indexes to account for the new additional first begin
-            // bracket
-            this.indexesOfPredicatePlaceHolders.set(
-                    i, this.indexesOfPredicatePlaceHolders.get(i) + 1);
-        }
-        if (that.predicate.equals(
-                        JdbcFilterPushdownPreparedStatementVisitor.PUSHDOWN_PREDICATE_PLACEHOLDER)
-                || (!that.indexesOfPredicatePlaceHolders.isEmpty())) {
-            // add index if that is a placeholder or has a placeholder.
-            this.indexesOfPredicatePlaceHolders.add(paramIndex);
-        }
         return this;
     }
 }

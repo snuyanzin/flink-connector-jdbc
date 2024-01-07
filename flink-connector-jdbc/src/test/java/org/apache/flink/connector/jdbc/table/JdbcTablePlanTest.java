@@ -61,6 +61,16 @@ public class JdbcTablePlanTest extends TableTestBase {
                                 + "  'url'='jdbc:derby:memory:test1',"
                                 + "  'table-name'='d'"
                                 + ")");
+
+        util.tableEnv()
+                .executeSql(
+                        "CREATE TABLE table_with_weird_column_name ( "
+                                + "ip varchar(20), type int, ```?age` int"
+                                + ") WITH ("
+                                + "  'connector'='jdbc',"
+                                + "  'url'='jdbc:derby:memory:test1',"
+                                + "  'table-name'='d'"
+                                + ")");
         util.tableEnv()
                 .executeSql(
                         "CREATE TABLE a ( "
@@ -95,19 +105,42 @@ public class JdbcTablePlanTest extends TableTestBase {
     @Test
     public void testLookupJoin() {
         util.verifyExecPlan(
-                "SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on a.ip = d.ip");
+                "SELECT * FROM a LEFT JOIN d FOR SYSTEM_TIME AS OF a.proctime ON a.ip = d.ip");
     }
 
     @Test
     public void testLookupJoinWithFilter() {
         util.verifyExecPlan(
-                "SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on d.type = 0 and a.ip = d.ip");
+                "SELECT * FROM a LEFT JOIN d FOR SYSTEM_TIME AS OF a.proctime ON d.type = 0 AND a.ip = d.ip");
+    }
+
+    @Test
+    public void testLookupJoinWithANDAndORFilter() {
+        util.verifyExecPlan(
+                "SELECT * FROM a LEFT JOIN d FOR SYSTEM_TIME AS OF a.proctime ON ((d.age = 50 AND d.type = 0) "
+                        + "OR (d.type = 1 AND d.age = 40)) AND a.ip = d.ip");
+    }
+
+    @Test
+    public void testLookupJoinWith2ANDsAndORFilter() {
+        util.verifyExecPlan(
+                "SELECT * FROM a JOIN d FOR SYSTEM_TIME AS OF a.proctime "
+                        + "ON ((50 > d.age AND d.type = 1 AND d.age > 0 ) "
+                        + "OR (70 > d.age AND d.type = 6 AND d.age > 10)) AND a.ip = d.ip");
     }
 
     @Test
     public void testLookupJoinWithORFilter() {
         util.verifyExecPlan(
-                "SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on (d.age = 50 OR d.type = 1)  and a.ip = d.ip");
+                "SELECT * FROM a LEFT JOIN d FOR SYSTEM_TIME AS OF a.proctime ON (d.age = 50 OR d.type = 1) AND a.ip = d.ip");
+    }
+
+    @Test
+    public void testLookupJoinWithWeirdColumnNames() {
+        util.verifyExecPlan(
+                "SELECT * FROM a LEFT JOIN table_with_weird_column_name FOR SYSTEM_TIME AS OF a.proctime "
+                        + "ON (table_with_weird_column_name.```?age` = 50 OR table_with_weird_column_name.type = 1) "
+                        + "AND a.ip = table_with_weird_column_name.ip");
     }
 
     /**

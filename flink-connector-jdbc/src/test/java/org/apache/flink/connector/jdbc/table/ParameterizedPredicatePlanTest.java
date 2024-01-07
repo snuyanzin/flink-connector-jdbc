@@ -18,152 +18,153 @@
 
 package org.apache.flink.connector.jdbc.table;
 
-import org.apache.flink.table.planner.utils.TableTestBase;
+import org.apache.flink.connector.jdbc.table.JdbcFilterPushdownPreparedStatementVisitor.FilterPushdownFunction;
 
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.testcontainers.shaded.com.google.common.collect.ImmutableList;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Collection;
+import java.util.Optional;
+import java.util.function.Supplier;
 
+import static org.apache.flink.connector.jdbc.table.JdbcFilterPushdownPreparedStatementVisitor.FilterPushdownFunction.AND;
+import static org.apache.flink.connector.jdbc.table.JdbcFilterPushdownPreparedStatementVisitor.FilterPushdownFunction.EQUALS;
+import static org.apache.flink.connector.jdbc.table.JdbcFilterPushdownPreparedStatementVisitor.FilterPushdownFunction.GREATER_THAN;
+import static org.apache.flink.connector.jdbc.table.JdbcFilterPushdownPreparedStatementVisitor.FilterPushdownFunction.GREATER_THAN_OR_EQUAL;
+import static org.apache.flink.connector.jdbc.table.JdbcFilterPushdownPreparedStatementVisitor.FilterPushdownFunction.IS_NOT_NULL;
+import static org.apache.flink.connector.jdbc.table.JdbcFilterPushdownPreparedStatementVisitor.FilterPushdownFunction.OR;
+import static org.apache.flink.connector.jdbc.table.JdbcFilterPushdownPreparedStatementVisitor.PLACEHOLDER;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** Tests ParameterizedPredicate. */
-public class ParameterizedPredicatePlanTest extends TableTestBase {
-    @Test
-    public void testCombine() {
-        ParameterizedPredicate thisParameterizedPredicateEquals =
-                new ParameterizedPredicate("`type1`");
-        ParameterizedPredicate parameterizedPredicatePlaceHolder =
-                new ParameterizedPredicate(
-                        JdbcFilterPushdownPreparedStatementVisitor.PUSHDOWN_PREDICATE_PLACEHOLDER);
-        thisParameterizedPredicateEquals.combine(
-                JdbcFilterPushdownPreparedStatementVisitor.OPERATOR_EQUALS,
-                parameterizedPredicatePlaceHolder);
-        assertThat(
-                        thisParameterizedPredicateEquals
-                                .getPredicate()
-                                .charAt(
-                                        thisParameterizedPredicateEquals
-                                                .getIndexesOfPredicatePlaceHolders()
-                                                .get(0)))
-                .isEqualTo(
-                        JdbcFilterPushdownPreparedStatementVisitor.PUSHDOWN_PREDICATE_PLACEHOLDER
-                                .charAt(0));
+class ParameterizedPredicatePlanTest {
 
-        ParameterizedPredicate thatParameterizedPredicateGTE =
-                new ParameterizedPredicate("`type2`");
-        thatParameterizedPredicateGTE.combine(
-                JdbcFilterPushdownPreparedStatementVisitor.OPERATOR_GREATER_THAN_OR_EQUAL,
-                parameterizedPredicatePlaceHolder);
-        assertThat(
-                        thatParameterizedPredicateGTE
-                                .getPredicate()
-                                .charAt(
-                                        thatParameterizedPredicateGTE
-                                                .getIndexesOfPredicatePlaceHolders()
-                                                .get(0)))
-                .isEqualTo(
-                        JdbcFilterPushdownPreparedStatementVisitor.PUSHDOWN_PREDICATE_PLACEHOLDER
-                                .charAt(0));
-
-        thisParameterizedPredicateEquals.combine(
-                JdbcFilterPushdownPreparedStatementVisitor.OPERATOR_OR,
-                thatParameterizedPredicateGTE);
-        assertThat(thisParameterizedPredicateEquals.getPredicate())
-                .isEqualTo("((`type1` = ?) OR (`type2` >= ?))");
-        assertThat(thisParameterizedPredicateEquals.getIndexesOfPredicatePlaceHolders().size())
-                .isEqualTo(2);
-        assertThat(
-                        thisParameterizedPredicateEquals
-                                .getPredicate()
-                                .charAt(
-                                        thisParameterizedPredicateEquals
-                                                .getIndexesOfPredicatePlaceHolders()
-                                                .get(0)))
-                .isEqualTo(
-                        JdbcFilterPushdownPreparedStatementVisitor.PUSHDOWN_PREDICATE_PLACEHOLDER
-                                .charAt(0));
-        assertThat(
-                        thisParameterizedPredicateEquals
-                                .getPredicate()
-                                .charAt(
-                                        thisParameterizedPredicateEquals
-                                                .getIndexesOfPredicatePlaceHolders()
-                                                .get(1)))
-                .isEqualTo(
-                        JdbcFilterPushdownPreparedStatementVisitor.PUSHDOWN_PREDICATE_PLACEHOLDER
-                                .charAt(0));
+    @ParameterizedTest
+    @MethodSource("providerForCombineTest")
+    void combineTest(TestSpec input) {
+        assertThat(input.predicateSupplier.get().getPredicate()).isEqualTo(input.expected);
     }
 
-    @Test
-    public void testCombineAll() {
+    static Collection<TestSpec> providerForCombineTest() {
+        return ImmutableList.of(
+                TestSpec.of(() -> p2(p("`type`"), p(PLACEHOLDER), EQUALS), "(`type` = ?)"),
+                TestSpec.of(() -> p2(p(PLACEHOLDER), p("`type`"), EQUALS), "(? = `type`)"),
+                TestSpec.of(
+                        () -> p2(p("`type2`"), p(PLACEHOLDER), GREATER_THAN_OR_EQUAL),
+                        "(`type2` >= ?)"),
+                TestSpec.of(
+                        () ->
+                                p2(
+                                        p2(p("`type1`"), p(PLACEHOLDER), EQUALS),
+                                        p2(p("`type2`"), p(PLACEHOLDER), EQUALS),
+                                        AND),
+                        "((`type1` = ?) AND (`type2` = ?))"),
+                TestSpec.of(
+                        () ->
+                                p2(
+                                        p2(p("`type1`"), p(PLACEHOLDER), EQUALS),
+                                        p2(p("`type2`"), p(PLACEHOLDER), EQUALS),
+                                        OR),
+                        "((`type1` = ?) OR (`type2` = ?))"),
+                TestSpec.of(
+                        () ->
+                                p2(
+                                        p2(p(PLACEHOLDER), p("`type1`"), EQUALS),
+                                        p2(p(PLACEHOLDER), p("`type2`"), EQUALS),
+                                        OR),
+                        "((? = `type1`) OR (? = `type2`))"),
+                TestSpec.of(
+                        () ->
+                                p2(
+                                        p2(p(PLACEHOLDER), p("`type1`"), EQUALS),
+                                        p2(p(PLACEHOLDER), p("`type2`"), EQUALS),
+                                        AND),
+                        "((? = `type1`) AND (? = `type2`))"),
+                TestSpec.of(
+                        () ->
+                                p2(
+                                        p2(
+                                                p2(
+                                                        p(PLACEHOLDER),
+                                                        p("`type1`"),
+                                                        GREATER_THAN_OR_EQUAL),
+                                                p2(p(PLACEHOLDER), p("`type2`"), EQUALS),
+                                                AND),
+                                        p2(p("`type1`"), p(PLACEHOLDER), GREATER_THAN),
+                                        AND),
+                        "(((? >= `type1`) AND (? = `type2`)) AND (`type1` > ?))"),
+                TestSpec.of(
+                        () ->
+                                p2(
+                                        p2(
+                                                p2(
+                                                        p2(
+                                                                p(PLACEHOLDER),
+                                                                p("`type1`"),
+                                                                GREATER_THAN_OR_EQUAL),
+                                                        p2(p(PLACEHOLDER), p("`type2`"), EQUALS),
+                                                        AND),
+                                                p2(p("`type1`"), p(PLACEHOLDER), GREATER_THAN),
+                                                AND),
+                                        p1(p(PLACEHOLDER), IS_NOT_NULL),
+                                        OR),
+                        "((((? >= `type1`) AND (? = `type2`)) AND (`type1` > ?)) OR (? IS NOT NULL))"));
+    }
 
-        List<ParameterizedPredicate> predicates = new ArrayList<>();
-        int count = 0;
-        for (String operator : JdbcFilterPushdownPreparedStatementVisitor.UNARY_OPERATORS) {
+    private static class TestSpec {
+        private final Supplier<ParameterizedPredicate> predicateSupplier;
+        private final String expected;
 
-            ParameterizedPredicate parameterizedPredicate =
-                    new ParameterizedPredicate(
-                            String.format("(%s %s)", "`type0_" + count + " `", operator));
-            predicates.add(parameterizedPredicate);
-            count++;
+        private TestSpec(Supplier<ParameterizedPredicate> predicateSupplier, String expected) {
+            this.predicateSupplier = predicateSupplier;
+            this.expected = expected;
         }
-        for (String operator : JdbcFilterPushdownPreparedStatementVisitor.SIMPLE_BINARY_OPERATORS) {
-            ParameterizedPredicate parameterizedPredicate =
-                    new ParameterizedPredicate("`type1_" + count + " `");
-            count++;
-            ParameterizedPredicate parameterizedPredicatePlaceHolder =
-                    new ParameterizedPredicate(
-                            JdbcFilterPushdownPreparedStatementVisitor
-                                    .PUSHDOWN_PREDICATE_PLACEHOLDER);
-            parameterizedPredicate.combine(operator, parameterizedPredicatePlaceHolder);
-            if (parameterizedPredicate.getIndexesOfPredicatePlaceHolders().size() > 0) {
-                assertThat(
-                                parameterizedPredicate
-                                        .getPredicate()
-                                        .charAt(
-                                                parameterizedPredicate
-                                                        .getIndexesOfPredicatePlaceHolders()
-                                                        .get(0)))
-                        .isEqualTo(
-                                JdbcFilterPushdownPreparedStatementVisitor
-                                        .PUSHDOWN_PREDICATE_PLACEHOLDER
-                                        .charAt(0));
-            }
-            predicates.add(parameterizedPredicate);
-        }
-        for (String operator : JdbcFilterPushdownPreparedStatementVisitor.UNARY_OPERATORS) {
 
-            ParameterizedPredicate parameterizedPredicate =
-                    new ParameterizedPredicate(
-                            String.format("(%s %s)", "`type2_" + count + " `", operator));
-            predicates.add(parameterizedPredicate);
-            count++;
+        public static TestSpec of(
+                Supplier<ParameterizedPredicate> predicateSupplier, String expected) {
+            return new TestSpec(predicateSupplier, expected);
         }
-        // combine the unary binary then unary to some combinations
-        ParameterizedPredicate completePredicate = null;
-        for (ParameterizedPredicate predicate : predicates) {
-            if (completePredicate == null) {
-                completePredicate = new ParameterizedPredicate(predicate);
-            } else {
-                completePredicate.combine(
-                        JdbcFilterPushdownPreparedStatementVisitor.OPERATOR_OR, predicate);
-                ArrayList<Integer> indexesOfPredicatePlaceHolders =
-                        completePredicate.getIndexesOfPredicatePlaceHolders();
-                if (!indexesOfPredicatePlaceHolders.isEmpty()) {
-                    for (Integer indexOfPredicatePlaceHolder : indexesOfPredicatePlaceHolders) {
-                        // check that the placeholder is where we expect
-                        assertThat(
-                                        completePredicate
-                                                .getPredicate()
-                                                .charAt(indexOfPredicatePlaceHolder))
-                                .isEqualTo(
-                                        JdbcFilterPushdownPreparedStatementVisitor
-                                                .PUSHDOWN_PREDICATE_PLACEHOLDER
-                                                .charAt(0));
-                    }
-                }
-            }
+
+        @Override
+        public String toString() {
+            return expected;
+        }
+    }
+
+    private static ParameterizedPredicate p(String predicate) {
+        return new ParameterizedPredicate(predicate);
+    }
+
+    private static ParameterizedPredicate p2(
+            ParameterizedPredicate a, ParameterizedPredicate b, FilterPushdownFunction operator) {
+        assertThat(operator.isUnaryOperation()).isFalse();
+        return a.combine(operator.getFunctionSql(), b);
+    }
+
+    private static ParameterizedPredicate p1(
+            ParameterizedPredicate predicate, FilterPushdownFunction operator) {
+        assertThat(operator.isUnaryOperation()).isTrue();
+        if (operator.isOperatorOnTheLeft()) {
+            return Optional.of(predicate)
+                    .map(
+                            fieldPred ->
+                                    new ParameterizedPredicate(
+                                            String.format(
+                                                    "(%s %s)",
+                                                    fieldPred.getPredicate(),
+                                                    operator.getFunctionSql())))
+                    .get();
+        } else {
+            return Optional.of(predicate)
+                    .map(
+                            fieldPred ->
+                                    new ParameterizedPredicate(
+                                            String.format(
+                                                    "(%s %s)",
+                                                    operator.getFunctionSql(),
+                                                    fieldPred.getPredicate())))
+                    .get();
         }
     }
 }

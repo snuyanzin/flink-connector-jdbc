@@ -45,7 +45,6 @@ import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static org.apache.flink.util.Preconditions.checkArgument;
 import static org.apache.flink.util.Preconditions.checkNotNull;
@@ -114,10 +113,7 @@ public class JdbcRowDataLookupFunction extends LookupFunction {
                 LOG.debug("Issuing look up select {}", this.query);
             }
         } else {
-            this.query =
-                    baseSelectStatement
-                            + " AND "
-                            + Arrays.stream(conditions).collect(Collectors.joining(" AND "));
+            this.query = baseSelectStatement + " AND " + String.join(" AND ", conditions);
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Issuing look up select with conditions {}", this.query);
             }

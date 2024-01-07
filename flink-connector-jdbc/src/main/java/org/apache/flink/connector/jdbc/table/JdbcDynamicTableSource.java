@@ -138,7 +138,7 @@ public class JdbcDynamicTableSource
                         parameterizedPredicates.get(predicateIndex);
                 String predicate = pushdownParameterizedPredicate.getPredicate();
                 Serializable[] parameters = pushdownParameterizedPredicate.getParameters();
-                ArrayList<Integer> indexesOfPredicatePlaceHolders =
+                int[] indexesOfPredicatePlaceHolders =
                         pushdownParameterizedPredicate.getIndexesOfPredicatePlaceHolders();
                 // build up the resolved condition.
                 StringBuilder resolvedCondition = new StringBuilder();
@@ -152,14 +152,13 @@ public class JdbcDynamicTableSource
                             parameterIndex < parameters.length;
                             parameterIndex++) {
                         resolvedCondition.append(
-                                predicate.substring(
-                                        processingIndex,
-                                        indexesOfPredicatePlaceHolders.get(parameterIndex)));
+                                predicate,
+                                processingIndex,
+                                indexesOfPredicatePlaceHolders[parameterIndex]);
                         resolvedCondition.append(parameters[parameterIndex]);
-                        processingIndex = indexesOfPredicatePlaceHolders.get(parameterIndex) + 1;
+                        processingIndex = indexesOfPredicatePlaceHolders[parameterIndex] + 1;
                     }
-                    resolvedCondition.append(
-                            predicate.substring(processingIndex, predicate.length()));
+                    resolvedCondition.append(predicate.substring(processingIndex));
                 }
                 conditions[predicateIndex] = resolvedCondition.toString();
             }

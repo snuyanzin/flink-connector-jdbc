@@ -68,9 +68,57 @@ TableSourceScan(table=[[default_catalog, default_database, jdbc, filter=[and(OR(
 ]]>
 	</Resource>
   </TestCase>
+  <TestCase name="testLookupJoinWithANDAndORFilter">
+        <Resource name="sql">
+            <![CDATA[SELECT * FROM a LEFT JOIN d FOR SYSTEM_TIME AS OF a.proctime ON ((d.age = 50 AND d.type = 0) OR (d.type = 1 AND d.age = 40)) AND a.ip = d.ip]]>
+        </Resource>
+        <Resource name="ast">
+            <![CDATA[
+LogicalProject(ip=[$0], proctime=[$1], ip0=[$2], type=[$3], age=[$4])
++- LogicalCorrelate(correlation=[$cor0], joinType=[left], requiredColumns=[{0, 1}])
+   :- LogicalProject(ip=[$0], proctime=[PROCTIME()])
+   :  +- LogicalTableScan(table=[[default_catalog, default_database, a]])
+   +- LogicalFilter(condition=[AND(OR(AND(=($2, 50), =($1, 0)), AND(=($1, 1), =($2, 40))), =($cor0.ip, CAST($0):VARCHAR(2147483647) CHARACTER SET "UTF-16LE"))])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalTableScan(table=[[default_catalog, default_database, d]])
+]]>
+        </Resource>
+        <Resource name="optimized exec plan">
+            <![CDATA[
+Calc(select=[ip, PROCTIME_MATERIALIZE(proctime) AS proctime, ip0, type, age])
++- LookupJoin(table=[default_catalog.default_database.d], joinType=[LeftOuterJoin], lookup=[ip=ip], select=[ip, proctime, ip, type, age, CAST(ip AS VARCHAR(2147483647)) AS ip0])
+   +- Calc(select=[ip, PROCTIME() AS proctime])
+      +- TableSourceScan(table=[[default_catalog, default_database, a]], fields=[ip])
+]]>
+        </Resource>
+  </TestCase>
+  <TestCase name="testLookupJoinWith2ANDsAndORFilter">
+        <Resource name="sql">
+            <![CDATA[SELECT * FROM a JOIN d FOR SYSTEM_TIME AS OF a.proctime ON ((50 > d.age AND d.type = 1 AND d.age > 0 ) OR (70 > d.age AND d.type = 6 AND d.age > 10)) AND a.ip = d.ip]]>
+        </Resource>
+        <Resource name="ast">
+            <![CDATA[
+LogicalProject(ip=[$0], proctime=[$1], ip0=[$2], type=[$3], age=[$4])
++- LogicalCorrelate(correlation=[$cor0], joinType=[inner], requiredColumns=[{0, 1}])
+   :- LogicalProject(ip=[$0], proctime=[PROCTIME()])
+   :  +- LogicalTableScan(table=[[default_catalog, default_database, a]])
+   +- LogicalFilter(condition=[AND(OR(AND(>(50, $2), =($1, 1), >($2, 0)), AND(>(70, $2), =($1, 6), >($2, 10))), =($cor0.ip, CAST($0):VARCHAR(2147483647) CHARACTER SET "UTF-16LE"))])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalTableScan(table=[[default_catalog, default_database, d]])
+]]>
+        </Resource>
+        <Resource name="optimized exec plan">
+            <![CDATA[
+Calc(select=[ip, PROCTIME_MATERIALIZE(proctime) AS proctime, ip0, type, age])
++- LookupJoin(table=[default_catalog.default_database.d], joinType=[InnerJoin], lookup=[ip=ip], select=[ip, proctime, ip, type, age, CAST(ip AS VARCHAR(2147483647)) AS ip0])
+   +- Calc(select=[ip, PROCTIME() AS proctime])
+      +- TableSourceScan(table=[[default_catalog, default_database, a]], fields=[ip])
+]]>
+        </Resource>
+  </TestCase>
   <TestCase name="testLookupJoin">
         <Resource name="sql">
-            <![CDATA[SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on a.ip = d.ip]]>
+            <![CDATA[SELECT * FROM a LEFT JOIN d FOR SYSTEM_TIME AS OF a.proctime ON a.ip = d.ip]]>
         </Resource>
         <Resource name="ast">
             <![CDATA[
@@ -94,7 +142,7 @@ Calc(select=[ip, PROCTIME_MATERIALIZE(proctime) AS proctime, ip0, type, age])
     </TestCase>
   <TestCase name="testLookupJoinWithFilter">
         <Resource name="sql">
-            <![CDATA[SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on d.type = 0 and a.ip = d.ip]]>
+            <![CDATA[SELECT * FROM a LEFT JOIN d FOR SYSTEM_TIME AS OF a.proctime ON d.type = 0 AND a.ip = d.ip]]>
         </Resource>
         <Resource name="ast">
             <![CDATA[
@@ -118,7 +166,7 @@ Calc(select=[ip, PROCTIME_MATERIALIZE(proctime) AS proctime, ip0, type, age])
     </TestCase>
     <TestCase name="testLookupJoinWithORFilter">
         <Resource name="sql">
-            <![CDATA[SELECT * FROM a left join d FOR SYSTEM_TIME AS OF a.proctime on (d.age = 50 OR d.type = 1)  and a.ip = d.ip]]>
+            <![CDATA[SELECT * FROM a LEFT JOIN d FOR SYSTEM_TIME AS OF a.proctime ON (d.age = 50 OR d.type = 1) AND a.ip = d.ip]]>
         </Resource>
         <Resource name="ast">
             <![CDATA[
@@ -135,6 +183,30 @@ LogicalProject(ip=[$0], proctime=[$1], ip0=[$2], type=[$3], age=[$4])
             <![CDATA[
 Calc(select=[ip, PROCTIME_MATERIALIZE(proctime) AS proctime, ip0, type, age])
 +- LookupJoin(table=[default_catalog.default_database.d], joinType=[LeftOuterJoin], lookup=[ip=ip], select=[ip, proctime, ip, type, age, CAST(ip AS VARCHAR(2147483647)) AS ip0])
+   +- Calc(select=[ip, PROCTIME() AS proctime])
+      +- TableSourceScan(table=[[default_catalog, default_database, a]], fields=[ip])
+]]>
+        </Resource>
+    </TestCase>
+    <TestCase name="testLookupJoinWithWeirdColumnNames">
+        <Resource name="sql">
+            <![CDATA[SELECT * FROM a LEFT JOIN table_with_weird_column_name FOR SYSTEM_TIME AS OF a.proctime ON (table_with_weird_column_name.```?age` = 50 OR table_with_weird_column_name.type = 1) AND a.ip = table_with_weird_column_name.ip]]>
+        </Resource>
+        <Resource name="ast">
+            <![CDATA[
+LogicalProject(ip=[$0], proctime=[$1], ip0=[$2], type=[$3], `?age=[$4])
++- LogicalCorrelate(correlation=[$cor0], joinType=[left], requiredColumns=[{0, 1}])
+   :- LogicalProject(ip=[$0], proctime=[PROCTIME()])
+   :  +- LogicalTableScan(table=[[default_catalog, default_database, a]])
+   +- LogicalFilter(condition=[AND(OR(=($2, 50), =($1, 1)), =($cor0.ip, CAST($0):VARCHAR(2147483647) CHARACTER SET "UTF-16LE"))])
+      +- LogicalSnapshot(period=[$cor0.proctime])
+         +- LogicalTableScan(table=[[default_catalog, default_database, table_with_weird_column_name]])
+]]>
+        </Resource>
+        <Resource name="optimized exec plan">
+            <![CDATA[
+Calc(select=[ip, PROCTIME_MATERIALIZE(proctime) AS proctime, ip0, type, `?age])
++- LookupJoin(table=[default_catalog.default_database.table_with_weird_column_name], joinType=[LeftOuterJoin], lookup=[ip=ip], select=[ip, proctime, ip, type, `?age, CAST(ip AS VARCHAR(2147483647)) AS ip0])
    +- Calc(select=[ip, PROCTIME() AS proctime])
       +- TableSourceScan(table=[[default_catalog, default_database, a]], fields=[ip])
 ]]>
