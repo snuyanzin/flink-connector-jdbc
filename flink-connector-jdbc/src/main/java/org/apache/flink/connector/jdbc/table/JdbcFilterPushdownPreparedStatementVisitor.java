@@ -41,7 +41,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -229,22 +228,6 @@ public class JdbcFilterPushdownPreparedStatementVisitor
 
         static FilterPushdownFunction valueOf(FunctionDefinition builtInFunctionDefinition) {
             return BUILT_IN_FUNCTION_2_FILTER_FUNCTION_MAP.get(builtInFunctionDefinition);
-        }
-
-        @VisibleForTesting
-        static Set<String> getBinaryOperators() {
-            return Arrays.stream(values())
-                    .filter(t -> !t.unaryOperation)
-                    .map(t -> t.functionSql)
-                    .collect(Collectors.toSet());
-        }
-
-        @VisibleForTesting
-        static Set<String> getUnaryOperators() {
-            return Arrays.stream(values())
-                    .filter(t -> t.unaryOperation)
-                    .map(t -> t.functionSql)
-                    .collect(Collectors.toSet());
         }
 
         @VisibleForTesting
